@@ -127,7 +127,8 @@ def run_cycle():
             "is the limit. Add vCPUs (keep IPERF_PARALLEL high).")
     elif peak and peak < 60 * NCPU:
         log(f"note: only ~{peak / 100:.1f} of {NCPU} cores used, so CPU isn't the limit — "
-            "the likely cap is the single virtio NIC queue (enable multiqueue = vCPUs).")
+            "the cap is the network path: the NIC/queue (VM: enable multiqueue), the host "
+            "uplink, or the upstream test server itself.")
 
 
 def collector_loop():
