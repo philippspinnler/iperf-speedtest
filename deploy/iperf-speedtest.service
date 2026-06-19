@@ -1,0 +1,23 @@
+[Unit]
+Description=iperf3 speedtest collector (Init7)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Path is rewritten by deploy/install.sh to wherever the repo is checked out.
+ExecStart=/usr/bin/python3 /opt/iperf-speedtest/collector.py
+Environment=HTTP_PORT=8089
+Environment=DATA_DIR=/var/lib/iperf-speedtest
+Environment=IPERF_HOST=speedtest.init7.net
+Environment=IPERF_PORT=5202
+Environment=IPERF_DURATION=10
+Environment=IPERF_OMIT=2
+Environment=INTERVAL_SECONDS=3600
+# IPERF_PARALLEL is left unset → defaults to 16 (see collector.py).
+DynamicUser=yes
+StateDirectory=iperf-speedtest
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

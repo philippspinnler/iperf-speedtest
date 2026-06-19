@@ -69,6 +69,27 @@ the test heavy. If you're not hitting line rate, read the cores figure in the lo
 A low-power host CPU (e.g. an i5-8500T at 2.1 GHz) may simply cap a software speedtest
 below line rate; the line is fine, the measuring machine is the limit.
 
+## Deploy natively in an LXC (max throughput)
+
+A full VM adds an emulated virtio NIC that caps high-rate throughput. An **LXC** shares
+the host kernel and uses a lightweight veth to the bridge, getting much closer to bare
+metal — the best option if you're chasing 10G. Run the collector directly (no Docker):
+
+On the Proxmox host, create an unprivileged Debian LXC bound to your bridge, give it
+several cores, and start it. Then inside the container:
+
+```sh
+apt-get update && apt-get install -y git
+git clone https://github.com/philippspinnler/iperf-speedtest /opt/iperf-speedtest
+/opt/iperf-speedtest/deploy/install.sh          # installs iperf3 + a systemd service
+journalctl -u iperf-speedtest -f                # watch the first cycle
+```
+
+It serves on `:8089` (edit `HTTP_PORT` / the Init7 settings in
+`/etc/systemd/system/iperf-speedtest.service`, then `systemctl restart iperf-speedtest`).
+Update later with `git -C /opt/iperf-speedtest pull && systemctl restart iperf-speedtest`.
+Point the dashboard's `NUXT_SPEEDTESTS_JSON` host at the LXC's IP, port `8089`.
+
 ## Dashboard integration
 
 Point the dashboard's speedtest config at this collector and select the iperf parser:
