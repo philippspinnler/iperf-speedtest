@@ -11,8 +11,9 @@ services:
     environment:
       IPERF_HOST: speedtest.init7.net
       IPERF_PORT: "5202"
-      IPERF_PARALLEL: "16"
-      IPERF_DURATION: "5"
+      # IPERF_PARALLEL defaults to the CPU count — leave unset unless experimenting.
+      IPERF_DURATION: "10"
+      IPERF_OMIT: "2"
       INTERVAL_SECONDS: "3600"
       HTTP_PORT: "8080"
 

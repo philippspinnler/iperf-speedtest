@@ -23,8 +23,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 # --- Config (env-overridable) ---
 IPERF_HOST = os.environ.get("IPERF_HOST", "speedtest.init7.net")
 IPERF_PORT = os.environ.get("IPERF_PORT", "5202")
-IPERF_PARALLEL = os.environ.get("IPERF_PARALLEL", "16")
-IPERF_DURATION = int(os.environ.get("IPERF_DURATION", "5"))
+# iperf3 >= 3.16 runs one thread per stream, so accuracy peaks when the stream
+# count matches the available CPUs and DROPS when it exceeds them (threads thrash
+# between cores). Default to the CPU count rather than a fixed 16.
+IPERF_PARALLEL = os.environ.get("IPERF_PARALLEL", "") or str(os.cpu_count() or 4)
+IPERF_DURATION = int(os.environ.get("IPERF_DURATION", "10"))
+# Seconds to omit at the start (-O) so TCP slow-start isn't averaged into the result.
+IPERF_OMIT = int(os.environ.get("IPERF_OMIT", "2"))
 INTERVAL_SECONDS = int(os.environ.get("INTERVAL_SECONDS", "3600"))
 HTTP_PORT = int(os.environ.get("HTTP_PORT", "8080"))
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
@@ -36,9 +41,11 @@ def log(msg):
 
 
 def run_iperf(reverse):
-    """Run one iperf3 test; return Mbps, or None on failure.
+    """Run one iperf3 test; return (Mbps, cpu_host_pct), or None on failure.
 
     reverse=True measures download (server -> client); False measures upload.
+    cpu_host_pct is iperf3's own CPU utilisation for this machine — near 100
+    means the test is CPU-bound (the host, not the line, is the limit).
     """
     cmd = [
         "iperf3",
@@ -46,6 +53,7 @@ def run_iperf(reverse):
         "-p", str(IPERF_PORT),
         "-P", str(IPERF_PARALLEL),
         "-t", str(IPERF_DURATION),
+        "-O", str(IPERF_OMIT),
         "--json",
     ]
     if reverse:
@@ -55,7 +63,7 @@ def run_iperf(reverse):
             cmd,
             capture_output=True,
             text=True,
-            timeout=IPERF_DURATION + 30,
+            timeout=IPERF_DURATION + IPERF_OMIT + 30,
         )
     except subprocess.TimeoutExpired:
         log(f"iperf3 {'download' if reverse else 'upload'} timed out")
@@ -71,8 +79,9 @@ def run_iperf(reverse):
         # On reverse (download), the client receives → sum_received is the throughput.
         # On forward (upload), the client sends → sum_sent.
         key = "sum_received" if reverse else "sum_sent"
-        bits_per_second = end[key]["bits_per_second"]
-        return bits_per_second / 1_000_000.0
+        mbps = end[key]["bits_per_second"] / 1_000_000.0
+        cpu_host = end.get("cpu_utilization_percent", {}).get("host_total")
+        return mbps, cpu_host
     except (ValueError, KeyError) as exc:
         log(f"could not parse iperf3 output: {exc}")
         return None
@@ -89,18 +98,26 @@ def write_result(result):
 
 def run_cycle():
     log("starting test cycle")
-    download = run_iperf(reverse=True)
-    upload = run_iperf(reverse=False)
-    if download is None or upload is None:
+    down = run_iperf(reverse=True)
+    up = run_iperf(reverse=False)
+    if down is None or up is None:
         log("cycle incomplete — keeping previous result")
         return
+    download, down_cpu = down
+    upload, up_cpu = up
     result = {
         "download": round(download, 2),
         "upload": round(upload, 2),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     write_result(result)
-    log(f"cycle ok: down {download:.0f} Mbps, up {upload:.0f} Mbps")
+
+    def cpu(v):
+        return f"{v:.0f}% cpu" if isinstance(v, (int, float)) else "cpu n/a"
+    log(f"cycle ok: down {download:.0f} Mbps ({cpu(down_cpu)}), up {upload:.0f} Mbps ({cpu(up_cpu)})")
+    if (isinstance(down_cpu, (int, float)) and down_cpu >= 95) or (isinstance(up_cpu, (int, float)) and up_cpu >= 95):
+        log("⚠ CPU-bound (~100%): result is limited by this machine, not the line — "
+            "give the VM more vCPUs and/or lower IPERF_PARALLEL to match.")
 
 
 def collector_loop():
@@ -140,7 +157,9 @@ def main():
     except Exception:
         version = "unknown"
     log(f"iperf3: {version}")
-    log(f"target {IPERF_HOST}:{IPERF_PORT}, -P {IPERF_PARALLEL} -t {IPERF_DURATION}s, every {INTERVAL_SECONDS}s")
+    log(f"detected {os.cpu_count()} CPUs")
+    log(f"target {IPERF_HOST}:{IPERF_PORT}, -P {IPERF_PARALLEL} -t {IPERF_DURATION}s "
+        f"-O {IPERF_OMIT}s, every {INTERVAL_SECONDS}s")
     log(f"serving GET /api/speedtest/latest on :{HTTP_PORT}")
 
     threading.Thread(target=collector_loop, daemon=True).start()
