@@ -69,11 +69,14 @@ the test heavy. If you're not hitting line rate, read the cores figure in the lo
 A low-power host CPU (e.g. an i5-8500T at 2.1 GHz) may simply cap a software speedtest
 below line rate; the line is fine, the measuring machine is the limit.
 
-## Deploy natively in an LXC (max throughput)
+## Deploy natively in an LXC / bare host (alternative)
 
-A full VM adds an emulated virtio NIC that caps high-rate throughput. An **LXC** shares
-the host kernel and uses a lightweight veth to the bridge, getting much closer to bare
-metal — the best option if you're chasing 10G. Run the collector directly (no Docker):
+The Docker image above is the recommended deployment. If you'd rather run without Docker
+(e.g. in a Proxmox LXC, which shares the host kernel and skips a VM's emulated virtio NIC),
+you can run the collector directly. Note: in practice this usually does **not** beat the
+Docker container — on a fast line the ceiling is typically the host uplink or the upstream
+test server, not the local virtualization layer. Also mind the distro's iperf3 version
+(Debian 12 ships the old single-threaded 3.12; the Docker image uses 3.17).
 
 On the Proxmox host, create an unprivileged Debian LXC bound to your bridge, give it
 several cores, and start it. Then inside the container:
