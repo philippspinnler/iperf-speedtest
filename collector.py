@@ -36,6 +36,7 @@ INTERVAL_SECONDS = int(os.environ.get("INTERVAL_SECONDS", "3600"))
 HTTP_PORT = int(os.environ.get("HTTP_PORT", "8080"))
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 RESULT_PATH = os.path.join(DATA_DIR, "latest.json")
+NCPU = os.cpu_count() or 1
 
 
 def log(msg):
@@ -114,12 +115,19 @@ def run_cycle():
     }
     write_result(result)
 
-    def cpu(v):
-        return f"{v:.0f}% cpu" if isinstance(v, (int, float)) else "cpu n/a"
-    log(f"cycle ok: down {download:.0f} Mbps ({cpu(down_cpu)}), up {upload:.0f} Mbps ({cpu(up_cpu)})")
-    if (isinstance(down_cpu, (int, float)) and down_cpu >= 95) or (isinstance(up_cpu, (int, float)) and up_cpu >= 95):
-        log("⚠ CPU-bound (~100%): result is limited by this machine, not the line — "
-            "give the VM more vCPUs (keep IPERF_PARALLEL high; the internet path needs many streams).")
+    # iperf3's host_total is summed across threads, so it can exceed 100% — divide
+    # by 100 to read it as "cores used", and compare against the CPUs we have.
+    def cores(v):
+        return f"{v / 100:.1f}/{NCPU} cores" if isinstance(v, (int, float)) else "cpu n/a"
+    log(f"cycle ok: down {download:.0f} Mbps ({cores(down_cpu)}), up {upload:.0f} Mbps ({cores(up_cpu)})")
+
+    peak = max((c for c in (down_cpu, up_cpu) if isinstance(c, (int, float))), default=0)
+    if peak >= 85 * NCPU:
+        log("⚠ CPU-bound: nearly all vCPUs are saturated — this machine, not the line, "
+            "is the limit. Add vCPUs (keep IPERF_PARALLEL high).")
+    elif peak and peak < 60 * NCPU:
+        log(f"note: only ~{peak / 100:.1f} of {NCPU} cores used, so CPU isn't the limit — "
+            "the likely cap is the single virtio NIC queue (enable multiqueue = vCPUs).")
 
 
 def collector_loop():

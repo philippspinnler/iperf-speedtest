@@ -47,8 +47,27 @@ and `INTERVAL_SECONDS` to control usage.
 | `HTTP_PORT` | `8080` | HTTP listen port |
 
 The download value uses `iperf3 -R` (reverse / server→client); upload uses a forward test.
-Each cycle logs iperf3's reported CPU utilisation; if it sits near 100% the result is
-**CPU-bound** (limited by the machine, not the line) — give it more/faster CPUs.
+Each cycle logs throughput plus CPU usage as **cores used / available** (iperf3's CPU%
+is summed across threads, so e.g. `1.6/6 cores`). That tells you where the bottleneck is.
+
+## Tuning for 10G in a Proxmox VM
+
+Filling a 10G line over the internet needs many parallel streams (`-P 16`), which makes
+the test heavy. If you're not hitting line rate, read the cores figure in the logs:
+
+- **Near all cores used** (e.g. `5.5/6 cores`) → CPU-bound. Give the VM more/faster vCPUs;
+  set CPU type to `host`.
+- **Only a fraction used** (e.g. `1.6/6 cores`) but still slow → the bottleneck is the
+  network path, almost always the **single virtio NIC queue** serializing softirqs on one
+  core. Fixes, in order:
+  1. VM → Network Device → **Multiqueue = vCPU count** (then reboot, or
+     `ethtool -L <iface> combined <N>` in the guest).
+  2. Set **firewall = 0** on the NIC if you don't need it (per-packet host overhead).
+  3. Prefer an **LXC container** over a full VM — it skips the virtio layer entirely and
+     gets closest to bare-metal throughput.
+
+A low-power host CPU (e.g. an i5-8500T at 2.1 GHz) may simply cap a software speedtest
+below line rate; the line is fine, the measuring machine is the limit.
 
 ## Dashboard integration
 
