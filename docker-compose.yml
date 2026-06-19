@@ -11,7 +11,7 @@ services:
     environment:
       IPERF_HOST: speedtest.init7.net
       IPERF_PORT: "5202"
-      # IPERF_PARALLEL defaults to the CPU count — leave unset unless experimenting.
+      # IPERF_PARALLEL defaults to 16 (Init7's recommendation for filling a 10G line).
       IPERF_DURATION: "10"
       IPERF_OMIT: "2"
       INTERVAL_SECONDS: "3600"

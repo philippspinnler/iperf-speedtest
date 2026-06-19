@@ -40,7 +40,7 @@ and `INTERVAL_SECONDS` to control usage.
 | --- | --- | --- |
 | `IPERF_HOST` | `speedtest.init7.net` | iperf3 server hostname |
 | `IPERF_PORT` | `5202` | iperf3 server port |
-| `IPERF_PARALLEL` | _CPU count_ | parallel streams (`-P`). iperf3 ≥3.16 uses one thread per stream, so accuracy peaks when this matches the CPU count and **drops if it exceeds it** (threads thrash between cores). Defaults to the detected CPU count; override only to experiment. |
+| `IPERF_PARALLEL` | `16` | parallel streams (`-P`). Over the internet each TCP flow is rate-limited, so you need many streams to fill a 10G line (Init7 recommends 16). iperf3 ≥3.16 gives each stream its own thread, so a high count can saturate the CPU — if a run logs ~100% CPU, add vCPUs rather than lowering this. |
 | `IPERF_DURATION` | `10` | test duration in seconds (`-t`) per direction |
 | `IPERF_OMIT` | `2` | seconds to omit at the start (`-O`) so TCP slow-start isn't averaged in |
 | `INTERVAL_SECONDS` | `3600` | seconds between test cycles |

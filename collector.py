@@ -23,10 +23,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 # --- Config (env-overridable) ---
 IPERF_HOST = os.environ.get("IPERF_HOST", "speedtest.init7.net")
 IPERF_PORT = os.environ.get("IPERF_PORT", "5202")
-# iperf3 >= 3.16 runs one thread per stream, so accuracy peaks when the stream
-# count matches the available CPUs and DROPS when it exceeds them (threads thrash
-# between cores). Default to the CPU count rather than a fixed 16.
-IPERF_PARALLEL = os.environ.get("IPERF_PARALLEL", "") or str(os.cpu_count() or 4)
+# Over the internet, providers rate-limit each TCP flow, so a single stream can't
+# fill a 10G line — you need many parallel streams to aggregate up (Init7 officially
+# recommends 16). With iperf3 >=3.16 each stream gets its own thread, so a high
+# stream count can saturate the CPU; if a run logs ~100% CPU, that machine (not the
+# line) is the limit — add vCPUs rather than lowering the stream count.
+IPERF_PARALLEL = os.environ.get("IPERF_PARALLEL", "16")
 IPERF_DURATION = int(os.environ.get("IPERF_DURATION", "10"))
 # Seconds to omit at the start (-O) so TCP slow-start isn't averaged into the result.
 IPERF_OMIT = int(os.environ.get("IPERF_OMIT", "2"))
@@ -117,7 +119,7 @@ def run_cycle():
     log(f"cycle ok: down {download:.0f} Mbps ({cpu(down_cpu)}), up {upload:.0f} Mbps ({cpu(up_cpu)})")
     if (isinstance(down_cpu, (int, float)) and down_cpu >= 95) or (isinstance(up_cpu, (int, float)) and up_cpu >= 95):
         log("⚠ CPU-bound (~100%): result is limited by this machine, not the line — "
-            "give the VM more vCPUs and/or lower IPERF_PARALLEL to match.")
+            "give the VM more vCPUs (keep IPERF_PARALLEL high; the internet path needs many streams).")
 
 
 def collector_loop():
