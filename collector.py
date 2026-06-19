@@ -131,6 +131,9 @@ def run_cycle():
     result = {
         "download": round(download, 2),
         "upload": round(upload, 2),
+        # Convenience fields pre-rounded to 1 decimal in Gbps (Homepage can't cap decimals).
+        "download_gbps": round(download / 1000, 1),
+        "upload_gbps": round(upload / 1000, 1),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     write_result(result)

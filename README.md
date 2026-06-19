@@ -14,10 +14,16 @@ transient test failures.
 
 ```
 GET /api/speedtest/latest
-→ { "download": 9450.21, "upload": 9380.14, "timestamp": "2026-06-19T10:30:00+00:00" }
+→ {
+    "download": 9450.21, "upload": 9380.14,      # Mbps
+    "download_gbps": 9.5, "upload_gbps": 9.4,    # Gbps, rounded to 1 decimal
+    "timestamp": "2026-06-19T10:30:00+00:00"
+  }
 ```
 
-Speeds are in **Mbps**. Returns `503 {}` until the first test completes. The path mirrors
+`download`/`upload` are in **Mbps**; `download_gbps`/`upload_gbps` are the same values in
+Gbps pre-rounded to one decimal (handy for dashboards that can't cap decimals, e.g.
+Homepage). Returns `503 {}` until the first test completes. The path mirrors
 speedtest-tracker so it drops into existing tooling unchanged.
 
 ## Run
