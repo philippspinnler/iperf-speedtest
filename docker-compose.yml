@@ -1,0 +1,20 @@
+services:
+  iperf-speedtest:
+    build: .
+    image: iperf-speedtest
+    container_name: iperf-speedtest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - iperf-data:/data
+    environment:
+      IPERF_HOST: speedtest.init7.net
+      IPERF_PORT: "5202"
+      IPERF_PARALLEL: "16"
+      IPERF_DURATION: "5"
+      INTERVAL_SECONDS: "3600"
+      HTTP_PORT: "8080"
+
+volumes:
+  iperf-data:
