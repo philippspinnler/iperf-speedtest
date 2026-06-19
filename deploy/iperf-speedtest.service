@@ -12,7 +12,10 @@ Environment=IPERF_HOST=speedtest.init7.net
 Environment=IPERF_PORT=5202
 Environment=IPERF_DURATION=10
 Environment=IPERF_OMIT=2
-Environment=INTERVAL_SECONDS=3600
+# Runs once a day at a random time in this local window (kind to the test server).
+Environment=TZ=Europe/Zurich
+Environment=DAILY_WINDOW_START_HOUR=2
+Environment=DAILY_WINDOW_END_HOUR=5
 # IPERF_PARALLEL is left unset → defaults to 16 (see collector.py).
 DynamicUser=yes
 StateDirectory=iperf-speedtest

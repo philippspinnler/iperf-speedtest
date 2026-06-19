@@ -3,7 +3,8 @@
 # multi-stream throughput well below line rate.
 FROM alpine:3.20
 
-RUN apk add --no-cache iperf3 python3
+# tzdata lets Python's zoneinfo resolve TZ (e.g. Europe/Zurich) for the daily schedule.
+RUN apk add --no-cache iperf3 python3 tzdata
 
 COPY collector.py /collector.py
 

@@ -13,12 +13,18 @@ Stdlib only — no third-party dependencies.
 
 import json
 import os
+import random
 import subprocess
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover
+    ZoneInfo = None
 
 # --- Config (env-overridable) ---
 IPERF_HOST = os.environ.get("IPERF_HOST", "speedtest.init7.net")
@@ -32,11 +38,25 @@ IPERF_PARALLEL = os.environ.get("IPERF_PARALLEL", "16")
 IPERF_DURATION = int(os.environ.get("IPERF_DURATION", "10"))
 # Seconds to omit at the start (-O) so TCP slow-start isn't averaged into the result.
 IPERF_OMIT = int(os.environ.get("IPERF_OMIT", "2"))
-INTERVAL_SECONDS = int(os.environ.get("INTERVAL_SECONDS", "3600"))
+# Scheduling: run once per day at a random time inside a local-time window, to stay
+# light on the public test server. TZ sets the local timezone (needs OS tzdata).
+TZ = os.environ.get("TZ", "Europe/Zurich")
+WINDOW_START_HOUR = int(os.environ.get("DAILY_WINDOW_START_HOUR", "2"))
+WINDOW_END_HOUR = int(os.environ.get("DAILY_WINDOW_END_HOUR", "5"))
+RUN_ON_START = os.environ.get("RUN_ON_START", "true").lower() not in ("0", "false", "no")
 HTTP_PORT = int(os.environ.get("HTTP_PORT", "8080"))
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 RESULT_PATH = os.path.join(DATA_DIR, "latest.json")
 NCPU = os.cpu_count() or 1
+
+if ZoneInfo is not None:
+    try:
+        LOCAL_TZ = ZoneInfo(TZ)
+        TZ_OK = True
+    except Exception:
+        LOCAL_TZ, TZ_OK = timezone.utc, False
+else:  # pragma: no cover
+    LOCAL_TZ, TZ_OK = timezone.utc, False
 
 
 def log(msg):
@@ -131,13 +151,35 @@ def run_cycle():
             "uplink, or the upstream test server itself.")
 
 
+def next_run():
+    """Return (seconds_to_wait, target_local_datetime) for the next daily run:
+    a random time within [WINDOW_START_HOUR, WINDOW_END_HOUR) local time, on the
+    next calendar occurrence of that window."""
+    now = datetime.now(LOCAL_TZ)
+    window_seconds = max(1, (WINDOW_END_HOUR - WINDOW_START_HOUR) * 3600)
+    offset = random.randint(0, window_seconds - 1)
+    target = now.replace(hour=WINDOW_START_HOUR, minute=0, second=0, microsecond=0) \
+        + timedelta(seconds=offset)
+    if target <= now:
+        target += timedelta(days=1)
+    return (target - now).total_seconds(), target
+
+
+def safe_cycle():
+    try:
+        run_cycle()
+    except Exception as exc:  # never let the loop die
+        log(f"unexpected error in cycle: {exc}")
+
+
 def collector_loop():
+    if RUN_ON_START:
+        safe_cycle()
     while True:
-        try:
-            run_cycle()
-        except Exception as exc:  # never let the loop die
-            log(f"unexpected error in cycle: {exc}")
-        time.sleep(INTERVAL_SECONDS)
+        delay, target = next_run()
+        log(f"next test at {target:%Y-%m-%d %H:%M} {TZ} (in {delay / 3600:.1f}h)")
+        time.sleep(delay)
+        safe_cycle()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -169,8 +211,10 @@ def main():
         version = "unknown"
     log(f"iperf3: {version}")
     log(f"detected {os.cpu_count()} CPUs")
-    log(f"target {IPERF_HOST}:{IPERF_PORT}, -P {IPERF_PARALLEL} -t {IPERF_DURATION}s "
-        f"-O {IPERF_OMIT}s, every {INTERVAL_SECONDS}s")
+    log(f"target {IPERF_HOST}:{IPERF_PORT}, -P {IPERF_PARALLEL} -t {IPERF_DURATION}s -O {IPERF_OMIT}s")
+    log(f"schedule: once daily between {WINDOW_START_HOUR:02d}:00 and {WINDOW_END_HOUR:02d}:00 {TZ}"
+        + ("" if TZ_OK else " (⚠ timezone unavailable — using UTC; add tzdata)")
+        + (", plus one run on startup" if RUN_ON_START else ""))
     log(f"serving GET /api/speedtest/latest on :{HTTP_PORT}")
 
     threading.Thread(target=collector_loop, daemon=True).start()

@@ -14,7 +14,10 @@ services:
       # IPERF_PARALLEL defaults to 16 (Init7's recommendation for filling a 10G line).
       IPERF_DURATION: "10"
       IPERF_OMIT: "2"
-      INTERVAL_SECONDS: "3600"
+      # Runs once a day at a random time in this local-time window (kind to the server).
+      TZ: Europe/Zurich
+      DAILY_WINDOW_START_HOUR: "2"
+      DAILY_WINDOW_END_HOUR: "5"
       HTTP_PORT: "8080"
 
 volumes:

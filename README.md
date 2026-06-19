@@ -30,9 +30,10 @@ curl http://localhost:8080/api/speedtest/latest
 ## ⚠️ Bandwidth warning
 
 Init7 is up to **25 Gbit/s symmetric**. With `-P 16`, each test direction can move several
-GB. A `-t 5` download + upload at the default 60-minute interval still transfers a large
-amount of data per day. **Only run this on an unmetered connection.** Tune `IPERF_DURATION`
-and `INTERVAL_SECONDS` to control usage.
+GB. By default the collector runs **once a day** (at a random time in the 02:00–05:00
+window) to stay light on the shared test server, but a single run still transfers a fair
+amount of data. **Only run this on an unmetered connection.** Tune `IPERF_DURATION` and the
+schedule window to control usage.
 
 ## Configuration (environment variables)
 
@@ -43,8 +44,14 @@ and `INTERVAL_SECONDS` to control usage.
 | `IPERF_PARALLEL` | `16` | parallel streams (`-P`). Over the internet each TCP flow is rate-limited, so you need many streams to fill a 10G line (Init7 recommends 16). iperf3 ≥3.16 gives each stream its own thread, so a high count can saturate the CPU — if a run logs ~100% CPU, add vCPUs rather than lowering this. |
 | `IPERF_DURATION` | `10` | test duration in seconds (`-t`) per direction |
 | `IPERF_OMIT` | `2` | seconds to omit at the start (`-O`) so TCP slow-start isn't averaged in |
-| `INTERVAL_SECONDS` | `3600` | seconds between test cycles |
+| `TZ` | `Europe/Zurich` | local timezone for the schedule window (needs OS tzdata) |
+| `DAILY_WINDOW_START_HOUR` | `2` | earliest local hour for the daily run |
+| `DAILY_WINDOW_END_HOUR` | `5` | latest local hour (exclusive) for the daily run |
+| `RUN_ON_START` | `true` | also run one test on startup so the dashboard isn't empty after a (re)deploy |
 | `HTTP_PORT` | `8080` | HTTP listen port |
+
+The collector runs once per day at a random time within `[DAILY_WINDOW_START_HOUR,
+DAILY_WINDOW_END_HOUR)` local time, plus once on startup (unless `RUN_ON_START=false`).
 
 The download value uses `iperf3 -R` (reverse / server→client); upload uses a forward test.
 Each cycle logs throughput plus CPU usage as **cores used / available** (iperf3's CPU%
