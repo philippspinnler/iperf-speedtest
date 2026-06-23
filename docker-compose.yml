@@ -18,6 +18,9 @@ services:
       TZ: Europe/Zurich
       DAILY_WINDOW_START_HOUR: "2"
       DAILY_WINDOW_END_HOUR: "5"
+      # Uncomment to also run a test immediately on startup (otherwise it waits for the
+      # window above, so a fresh deploy shows "no reading yet" until then).
+      # RUN_ON_START: "true"
       HTTP_PORT: "8080"
 
 volumes:

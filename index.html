@@ -88,7 +88,7 @@
   /* ---- header ---- */
   .head {
     display: flex;
-    align-items: baseline;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
     flex-wrap: wrap;
@@ -109,6 +109,12 @@
     font-size: clamp(15px, 2.4vw, 18px);
     color: var(--text);
     letter-spacing: -.01em;
+  }
+  .headright {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 12px;
   }
   .status {
     display: inline-flex;
@@ -133,6 +139,26 @@
     0%   { box-shadow: 0 0 0 0 rgba(116,224,196,.5); }
     70%  { box-shadow: 0 0 0 7px rgba(116,224,196,0); }
     100% { box-shadow: 0 0 0 0 rgba(116,224,196,0); }
+  }
+  .latency {
+    text-align: right;
+    line-height: 1;
+  }
+  .latency .lnum {
+    font-family: var(--mono);
+    font-size: clamp(20px, 4vw, 26px);
+    font-weight: 500;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .latency .lunit { font-family: var(--sans); font-size: 12px; color: var(--muted); margin-left: 3px; }
+  .latency .llabel {
+    display: block;
+    margin-top: 6px;
+    font-size: 10px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--faint);
   }
 
   /* ---- readouts ---- */
@@ -243,6 +269,99 @@
   }
   .ledger span { color: var(--text); }
 
+  /* ---- history ---- */
+  .history {
+    margin-top: clamp(26px, 4vw, 38px);
+    padding-top: clamp(20px, 3vw, 28px);
+    border-top: 1px solid var(--hair);
+  }
+  .hhead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: clamp(16px, 2.4vw, 22px);
+  }
+  .seg {
+    display: inline-flex;
+    background: #0a0c16;
+    border: 1px solid var(--hair-soft);
+    border-radius: 999px;
+    padding: 3px;
+    gap: 2px;
+  }
+  .seg button {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .02em;
+    padding: 6px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: color .2s var(--ease), background .2s var(--ease);
+  }
+  .seg button:hover { color: var(--text); }
+  .seg button[aria-selected="true"] {
+    background: var(--hair);
+    color: var(--text);
+  }
+  .seg button:focus-visible { outline: 2px solid var(--down); outline-offset: 2px; }
+
+  .chartwrap { position: relative; }
+  .chart svg { display: block; width: 100%; height: auto; }
+  .guide {
+    position: absolute;
+    top: 0; width: 1px;
+    background: linear-gradient(var(--muted), transparent);
+    pointer-events: none;
+    opacity: .8;
+  }
+  .tip {
+    position: absolute;
+    top: 0;
+    transform: translate(-50%, -8px);
+    background: rgba(10, 12, 22, .92);
+    border: 1px solid var(--hair);
+    border-radius: 10px;
+    padding: 9px 11px;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text);
+    white-space: nowrap;
+    pointer-events: none;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    box-shadow: 0 12px 30px -12px rgba(0,0,0,.9);
+    z-index: 3;
+  }
+  .tip .tdate { color: var(--muted); margin-bottom: 5px; letter-spacing: .03em; }
+  .tip .trow { display: flex; align-items: center; gap: 7px; }
+  .tip .trow i { width: 8px; height: 8px; border-radius: 2px; }
+  .tip .tval { margin-left: auto; padding-left: 14px; }
+
+  .legend {
+    display: flex;
+    gap: 18px;
+    margin-top: 14px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
+
+  .hempty {
+    padding: 30px 8px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
   /* ---- empty / error states ---- */
   .note {
     text-align: center;
@@ -275,8 +394,14 @@
         <div class="eyebrow">Fibre throughput · latest reading</div>
         <div class="target" id="target">—</div>
       </div>
-      <div class="status" id="status" data-state="idle">
-        <span class="dot"></span><span id="statusText">Establishing link…</span>
+      <div class="headright">
+        <div class="status" id="status" data-state="idle">
+          <span class="dot"></span><span id="statusText">Establishing link…</span>
+        </div>
+        <div class="latency" id="latency" hidden>
+          <span class="lnum" id="pingNum">—</span><span class="lunit">ms</span>
+          <span class="llabel">Latency</span>
+        </div>
       </div>
     </header>
 
@@ -303,6 +428,28 @@
       </div>
 
       <footer class="ledger" id="ledger"></footer>
+
+      <!-- history -->
+      <section class="history" id="history" hidden>
+        <div class="hhead">
+          <span class="eyebrow">History</span>
+          <div class="seg" id="seg" role="tablist" aria-label="History window">
+            <button role="tab" data-win="week">Week</button>
+            <button role="tab" data-win="month" aria-selected="true">Month</button>
+            <button role="tab" data-win="year">Year</button>
+          </div>
+        </div>
+        <div class="chartwrap" id="chartwrap">
+          <div class="chart" id="chart"></div>
+          <div class="guide" id="guide" hidden></div>
+          <div class="tip" id="tip" hidden></div>
+          <div class="hempty" id="hempty" hidden></div>
+        </div>
+        <div class="legend">
+          <span><i style="background:var(--down)"></i>Download</span>
+          <span><i style="background:var(--up)"></i>Upload</span>
+        </div>
+      </section>
     </section>
 
     <!-- empty / error -->
@@ -314,22 +461,30 @@
 
 <script>
   const API = "/api/speedtest/latest";
+  const HIST_API = "/api/speedtest/history";
   const POLL_MS = 30000;
-  // Nice ceilings (Gbit/s) the meter snaps up to. 25 = Init7's symmetric max.
+  // Nice ceilings (Gbit/s) the meter and chart snap up to. 25 = Init7's symmetric max.
   const STEPS = [0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100];
+  const WINDOWS = { week: 7, month: 30, year: 365 };
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const $ = (id) => document.getElementById(id);
   const els = {
     status: $("status"), statusText: $("statusText"), target: $("target"),
+    latency: $("latency"), pingNum: $("pingNum"),
     readouts: $("readouts"), note: $("note"), noteTitle: $("noteTitle"), noteBody: $("noteBody"),
     ledger: $("ledger"),
+    history: $("history"), seg: $("seg"), chart: $("chart"), chartwrap: $("chartwrap"),
+    guide: $("guide"), tip: $("tip"), hempty: $("hempty"),
     down: { num: $("downNum"), sub: $("downSub"), fill: $("downFill"), ticks: $("downTicks"), cap: $("downCap") },
     up:   { num: $("upNum"),   sub: $("upSub"),   fill: $("upFill"),   ticks: $("upTicks"),   cap: $("upCap") },
   };
 
   let lastTs = null;          // timestamp of the reading currently shown
   let ledgerTimer = null;     // keeps the "measured … ago" line current
+  let historyData = [];       // full rolling history (oldest -> newest)
+  let winKey = "month";       // selected history window
+  let plotted = [];           // points drawn in the current chart (with pixel coords)
 
   function ceilingFor(maxGbps) {
     for (const s of STEPS) if (maxGbps <= s * 0.985) return s;
@@ -409,6 +564,13 @@
     renderTicks(els.down.ticks, ceil);
     renderTicks(els.up.ticks, ceil);
 
+    if (d.ping_ms != null) {
+      els.pingNum.textContent = d.ping_ms;
+      els.latency.hidden = false;
+    } else {
+      els.latency.hidden = true;
+    }
+
     const fresh = d.timestamp !== lastTs;
     lastTs = d.timestamp;
 
@@ -423,6 +585,8 @@
     paintLedger(d);
     clearInterval(ledgerTimer);
     ledgerTimer = setInterval(() => paintLedger(d), 60000);
+
+    if (fresh) fetchHistory();
   }
 
   function noteView(state, title, body) {
@@ -432,12 +596,148 @@
     show("note");
   }
 
+  // ---------- history chart ----------
+
+  function fmtDate(t, key) {
+    const d = new Date(t);
+    if (key === "year") return d.toLocaleDateString(undefined, { month: "short" });
+    return d.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit" });
+  }
+
+  function svgEl(tag, attrs) {
+    let s = `<${tag}`;
+    for (const k in attrs) s += ` ${k}="${attrs[k]}"`;
+    return s + ">";
+  }
+
+  function renderChart() {
+    const days = WINDOWS[winKey];
+    const now = Date.now();
+    const tStart = now - days * 86400e3;
+    const pts = historyData
+      .filter((d) => new Date(d.timestamp).getTime() >= tStart)
+      .map((d) => ({ t: new Date(d.timestamp).getTime(), d: (d.download || 0) / 1000, u: (d.upload || 0) / 1000, ping: d.ping_ms }))
+      .sort((a, b) => a.t - b.t);
+
+    els.guide.hidden = true; els.tip.hidden = true;
+
+    if (pts.length === 0) {
+      els.chart.innerHTML = "";
+      els.hempty.hidden = false;
+      els.hempty.textContent = historyData.length
+        ? "No tests recorded in this window yet."
+        : "History builds up as daily tests run — check back after a few days.";
+      plotted = [];
+      return;
+    }
+    els.hempty.hidden = true;
+
+    const W = 720, H = 240, PL = 38, PR = 14, PT = 16, PB = 28;
+    const ax0 = PL, ax1 = W - PR, ay0 = H - PB, ay1 = PT;
+    const span = Math.max(1, now - tStart);
+
+    // Auto-scale the y-axis to the data (with padding) and label it, so day-to-day
+    // variation is visible — the meter above already shows absolute proximity to line rate.
+    const vals = pts.flatMap((p) => [p.d, p.u]);
+    let yLo = Math.min(...vals), yHi = Math.max(...vals);
+    if (yHi - yLo < 0.2) { const m = (yHi + yLo) / 2; yLo = m - 0.3; yHi = m + 0.3; }
+    const pad = (yHi - yLo) * 0.25;
+    yLo = Math.max(0, yLo - pad); yHi = yHi + pad;
+    const sx = (t) => ax0 + (t - tStart) / span * (ax1 - ax0);
+    const sy = (v) => ay0 - (v - yLo) / (yHi - yLo) * (ay0 - ay1);
+
+    pts.forEach((p) => { p.x = sx(p.t); p.dy = sy(p.d); p.uy = sy(p.u); });
+    plotted = pts;
+
+    let g = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "xMidYMid meet", role: "img", "aria-label": `Download and upload (Gbit/s) over the last ${winKey}` });
+
+    // horizontal gridlines + y labels (Gbit/s) at bottom, middle, top of the range
+    [0, 0.5, 1].forEach((f) => {
+      const y = ay0 - f * (ay0 - ay1);
+      g += svgEl("line", { x1: ax0, y1: y, x2: ax1, y2: y, stroke: "var(--hair-soft)", "stroke-width": 1, "vector-effect": "non-scaling-stroke" }) + "</line>";
+      g += svgEl("text", { x: ax0 - 8, y: y + 3, "text-anchor": "end", fill: "var(--faint)", "font-family": "var(--mono)", "font-size": 10 }) + fmtGbps(yLo + f * (yHi - yLo)) + "</text>";
+    });
+
+    // x date ticks
+    const nticks = Math.min(5, Math.max(2, pts.length));
+    for (let i = 0; i < nticks; i++) {
+      const t = tStart + (i / (nticks - 1)) * span;
+      const x = sx(t);
+      g += svgEl("text", { x, y: H - 8, "text-anchor": i === 0 ? "start" : (i === nticks - 1 ? "end" : "middle"), fill: "var(--faint)", "font-family": "var(--mono)", "font-size": 10 }) + fmtDate(t, winKey) + "</text>";
+    }
+
+    const line = (key) => pts.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p[key].toFixed(1)}`).join(" ");
+
+    if (pts.length > 1) {
+      g += svgEl("path", { d: line("uy"), fill: "none", stroke: "var(--up)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "vector-effect": "non-scaling-stroke" }) + "</path>";
+      g += svgEl("path", { d: line("dy"), fill: "none", stroke: "var(--down)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "vector-effect": "non-scaling-stroke" }) + "</path>";
+    }
+
+    // dots for sparse windows
+    if (pts.length <= 31) {
+      pts.forEach((p) => {
+        g += svgEl("circle", { cx: p.x.toFixed(1), cy: p.uy.toFixed(1), r: 2.5, fill: "var(--ink)", stroke: "var(--up)", "stroke-width": 1.5, "vector-effect": "non-scaling-stroke" }) + "</circle>";
+        g += svgEl("circle", { cx: p.x.toFixed(1), cy: p.dy.toFixed(1), r: 2.5, fill: "var(--ink)", stroke: "var(--down)", "stroke-width": 1.5, "vector-effect": "non-scaling-stroke" }) + "</circle>";
+      });
+    }
+
+    g += "</svg>";
+    els.chart.innerHTML = g;
+  }
+
+  function moveTip(e) {
+    if (!plotted.length) return;
+    const svg = els.chart.querySelector("svg");
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const vbX = (clientX - rect.left) / rect.width * 720;
+    let best = null, bd = Infinity;
+    for (const p of plotted) { const dd = Math.abs(p.x - vbX); if (dd < bd) { bd = dd; best = p; } }
+    if (!best) return;
+
+    const leftPct = best.x / 720 * 100;
+    els.guide.style.left = leftPct + "%";
+    els.guide.style.height = (best.dy < best.uy ? best.dy : best.uy) / 240 * 100 + "%";
+    els.guide.hidden = false;
+
+    const pingTxt = best.ping != null ? `<div class="trow"><span class="tdate" style="margin:0">ping</span><span class="tval">${best.ping} ms</span></div>` : "";
+    els.tip.innerHTML =
+      `<div class="tdate">${new Date(best.t).toLocaleDateString(undefined, { weekday: "short", day: "2-digit", month: "short" })}</div>` +
+      `<div class="trow"><i style="background:var(--down)"></i>down<span class="tval">${fmtGbps(best.d)} Gbit/s</span></div>` +
+      `<div class="trow"><i style="background:var(--up)"></i>up<span class="tval">${fmtGbps(best.u)} Gbit/s</span></div>` +
+      pingTxt;
+    els.tip.style.left = Math.min(88, Math.max(12, leftPct)) + "%";
+    els.tip.hidden = false;
+  }
+  function hideTip() { els.guide.hidden = true; els.tip.hidden = true; }
+
+  function selectWindow(key) {
+    winKey = key;
+    [...els.seg.children].forEach((b) => b.setAttribute("aria-selected", String(b.dataset.win === key)));
+    renderChart();
+  }
+
+  function renderHistory() {
+    els.history.hidden = historyData.length < 1;
+    if (!els.history.hidden) renderChart();
+  }
+
+  async function fetchHistory() {
+    try {
+      const r = await fetch(HIST_API, { cache: "no-store" });
+      if (!r.ok) return;
+      const arr = await r.json();
+      if (Array.isArray(arr)) { historyData = arr; renderHistory(); }
+    } catch { /* leave the last chart in place */ }
+  }
+
   async function poll() {
     try {
       const r = await fetch(API, { cache: "no-store" });
       if (r.status === 503) {
         noteView("idle", "No reading yet",
-          "The first test runs on startup — this usually fills in within a minute.");
+          "The first test runs in the nightly window. Set RUN_ON_START=true to test right away.");
         return;
       }
       if (!r.ok) throw new Error("HTTP " + r.status);
@@ -445,7 +745,6 @@
       if (d && (d.download != null || d.upload != null)) render(d);
       else noteView("idle", "No reading yet", "Waiting for the first measurement to complete.");
     } catch (e) {
-      // keep the last good reading on screen if we have one; only blank out on first failure
       if (lastTs) setStatus("error", "Reconnecting…");
       else noteView("error", "Can't reach the collector",
         "The dashboard is up but the speedtest service isn't answering. Retrying…");
@@ -453,7 +752,15 @@
   }
 
   els.target.textContent = location.hostname || "speedtest.init7.net";
+  els.seg.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) selectWindow(b.dataset.win); });
+  els.chart.addEventListener("pointermove", moveTip);
+  els.chart.addEventListener("pointerleave", hideTip);
+  els.chart.addEventListener("touchmove", moveTip, { passive: true });
+  els.chart.addEventListener("touchend", hideTip);
+  window.addEventListener("resize", () => { if (!els.history.hidden) renderChart(); });
+
   poll();
+  fetchHistory();
   setInterval(poll, POLL_MS);
 </script>
 </body>

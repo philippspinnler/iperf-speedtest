@@ -2,14 +2,15 @@
 
 **A tiny, self-hosted speedtest for fast fiber lines.** It runs [iperf3](https://iperf.fr/)
 against a public server (default: [Init7](https://www.init7.net/)), then shows you the
-latest download/upload result on a clean dashboard and over a simple JSON API.
+latest download/upload speed and latency on a clean dashboard — with a history graph going
+back over a year — and over a simple JSON API.
 
 On a multi-gigabit line, the usual Ookla-based tools (like
 [speedtest-tracker](https://github.com/linuxserver/docker-speedtest-tracker)) often
 under-read by a lot. iperf3 with many parallel streams gets much closer to your real line
 rate — this wraps it in something you can leave running.
 
-![The dashboard showing a symmetric ~9.5 Gbit/s reading](docs/dashboard.png)
+![The dashboard: a symmetric ~9.5 Gbit/s reading, latency, and a month of history](docs/dashboard.png)
 
 It's one small Python process (standard library only — no pip installs, no database). The
 last result is saved to disk, so a good reading stays on screen even if a later test fails
@@ -25,15 +26,17 @@ You'll need Docker. From the project folder:
 docker compose up -d --build
 ```
 
-Then open **http://localhost:8080/** in your browser. The first test runs on startup, so
-the dashboard fills in within a minute or two.
+Then open **http://localhost:8080/** in your browser. By default the first test runs
+overnight, so the dashboard stays in its "no reading yet" state until then. Want a result
+right away? Start it with `RUN_ON_START=true` (see [Configuration](#configuration)) to also
+test immediately on launch.
 
 > [!WARNING]
 > **Only run this on an unmetered connection.** Init7 offers up to **25 Gbit/s
 > symmetric**, and a single test with 16 parallel streams can move several GB. To stay
 > kind to the shared test server, the collector runs just **once a day** by default (at a
-> random time between 02:00 and 05:00) plus once on startup. You can make tests shorter or
-> change the window — see [Configuration](#configuration).
+> random time between 02:00 and 05:00). You can make tests shorter or change the window —
+> see [Configuration](#configuration).
 
 That's it. Everything below is optional.
 
@@ -41,29 +44,36 @@ That's it. Everything below is optional.
 
 ## What you're looking at
 
-The dashboard plots **download** and **upload** on a single shared meter, scaled to a
+The **latest reading** plots download and upload on a single shared meter, scaled to a
 sensible ceiling for your line (1 → 2.5 → 5 → 10 → 25 Gbit/s). Putting both on the same
 scale makes two things obvious at a glance:
 
 - **How close you are to line rate** — how full each bar is.
 - **Whether your line is symmetric** — do the two bars match?
 
-It refreshes on its own and keeps the last good reading on screen if the collector is
-briefly unreachable. The footer shows how the test was run (parallel streams, sample
-length) and when it last measured.
+The current **latency** sits up in the header (measured on the idle line, just before the
+speed test), and the footer shows how the test was run and when it last measured.
+
+Below that, the **history graph** charts download and upload over time, with a toggle for
+the last **week**, **month**, or **year**. The y-axis auto-zooms to the data so day-to-day
+variation and any dips are easy to spot; hover (or tap) a point for the exact numbers.
+
+The page refreshes on its own and keeps the last good reading on screen if the collector
+is briefly unreachable.
 
 ---
 
 ## The JSON API
 
 If you'd rather wire the numbers into another tool, every reading is also available as
-JSON:
+JSON. **The latest reading:**
 
 ```
 GET /api/speedtest/latest
 → {
     "download": 9450.21, "upload": 9380.14,      # Mbps
     "download_gbps": 9.5, "upload_gbps": 9.4,    # Gbps, rounded to 1 decimal
+    "ping_ms": 2.9,                              # idle latency, milliseconds
     "timestamp": "2026-06-19T10:30:00+00:00"
   }
 ```
@@ -75,10 +85,21 @@ curl http://localhost:8080/api/speedtest/latest
 - `download` / `upload` are in **Mbps**.
 - `download_gbps` / `upload_gbps` are the same values in **Gbps**, pre-rounded to one
   decimal — handy for dashboards that can't limit decimal places (e.g. Homepage).
+- `ping_ms` is the latency to the iperf host (TCP-connect time on the idle line), or
+  `null` if it couldn't be measured.
 - Before the first test finishes you'll get `503 {}`.
 
-The path deliberately mirrors speedtest-tracker, so it drops into existing tooling
+The `latest` path deliberately mirrors speedtest-tracker, so it drops into existing tooling
 unchanged.
+
+**The full history** (oldest → newest, same fields per entry) powers the dashboard graph:
+
+```
+GET /api/speedtest/history
+→ [ { "download": …, "upload": …, "ping_ms": …, "timestamp": … }, … ]
+```
+
+It returns `[]` until the first test completes, and keeps up to `HISTORY_SIZE` readings.
 
 ---
 
@@ -97,12 +118,16 @@ the defaults target Init7.
 | `TZ` | `Europe/Zurich` | Timezone for the schedule window (needs OS tzdata) |
 | `DAILY_WINDOW_START_HOUR` | `2` | Earliest local hour for the daily test |
 | `DAILY_WINDOW_END_HOUR` | `5` | Latest local hour (exclusive) for the daily test |
-| `RUN_ON_START` | `true` | Also run one test on startup, so the dashboard isn't empty after a (re)deploy |
+| `RUN_ON_START` | `false` | Set to `true` to also run one test immediately on startup (handy for a first reading right after deploy) |
+| `HISTORY_SIZE` | `400` | How many past readings to keep for the history graph (~400 ≈ 13 months of daily tests) |
+| `PING_SAMPLES` | `5` | Latency samples per test; the best (lowest) one is kept |
+| `PING_TIMEOUT` | `2` | Seconds to wait for each latency sample before giving up |
 | `HTTP_PORT` | `8080` | Port the dashboard and API listen on |
 
-**How scheduling works:** one test per day at a random time inside your window, plus one
-on startup (unless `RUN_ON_START=false`). Download is measured with `iperf3 -R`
-(server → you); upload is a normal forward test.
+**How scheduling works:** one test per day at a random time inside your window. By default
+nothing runs until that window; set `RUN_ON_START=true` to also test once on startup.
+Download is measured with `iperf3 -R` (server → you); upload is a normal forward test; and
+latency is the TCP-connect time to the iperf host, measured first on the idle line.
 
 ---
 

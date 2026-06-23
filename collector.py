@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """iperf3 speedtest collector.
 
-Periodically runs iperf3 download (-R) and upload tests against a public server
-(default: Init7) and serves the latest result over HTTP at
-GET /api/speedtest/latest as {"download": <mbps>, "upload": <mbps>, "timestamp": <iso>}.
+Periodically runs an idle latency probe plus iperf3 download (-R) and upload tests
+against a public server (default: Init7), and serves results over HTTP:
 
-The path mirrors speedtest-tracker so the dashboard's existing fetch URL works
-unchanged; the dashboard is told it's an "iperf" source so it reads the flat shape.
+  GET /api/speedtest/latest   -> the most recent reading (flat object, Mbps + Gbps + ping)
+  GET /api/speedtest/history  -> a rolling list of past readings (oldest -> newest)
+  GET /                       -> a self-contained dashboard (index.html)
+
+The /latest path mirrors speedtest-tracker so an existing fetch URL works unchanged; the
+dashboard is told it's an "iperf" source so it reads the flat shape.
 
 Stdlib only — no third-party dependencies.
 """
@@ -14,6 +17,7 @@ Stdlib only — no third-party dependencies.
 import json
 import os
 import random
+import socket
 import subprocess
 import sys
 import threading
@@ -43,10 +47,21 @@ IPERF_OMIT = int(os.environ.get("IPERF_OMIT", "2"))
 TZ = os.environ.get("TZ", "Europe/Zurich")
 WINDOW_START_HOUR = int(os.environ.get("DAILY_WINDOW_START_HOUR", "2"))
 WINDOW_END_HOUR = int(os.environ.get("DAILY_WINDOW_END_HOUR", "5"))
-RUN_ON_START = os.environ.get("RUN_ON_START", "true").lower() not in ("0", "false", "no")
+# Off by default: a fresh deploy waits for the next daily window. Set RUN_ON_START=true
+# to also run one test immediately on startup (handy for a first reading / testing).
+RUN_ON_START = os.environ.get("RUN_ON_START", "false").lower() in ("1", "true", "yes")
+# Latency probe: time to open a TCP connection to the iperf host (SYN -> SYN/ACK). Pure
+# stdlib and unprivileged, so it behaves the same in Docker and an LXC; we keep the best
+# of a few samples on the idle line, before the throughput test loads it.
+PING_SAMPLES = int(os.environ.get("PING_SAMPLES", "5"))
+PING_TIMEOUT = float(os.environ.get("PING_TIMEOUT", "2"))
 HTTP_PORT = int(os.environ.get("HTTP_PORT", "8080"))
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 RESULT_PATH = os.path.join(DATA_DIR, "latest.json")
+HISTORY_PATH = os.path.join(DATA_DIR, "history.json")
+# How many past readings to keep (~one daily test each). 400 ≈ 13 months, enough to
+# back the dashboard's week/month/year views.
+HISTORY_SIZE = int(os.environ.get("HISTORY_SIZE", "400"))
 # The dashboard (index.html) ships alongside this script, so it works the same
 # whether run from a repo checkout or copied into the Docker image.
 STATIC_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -114,6 +129,33 @@ def run_iperf(reverse):
         return None
 
 
+def run_ping():
+    """Measure idle latency to the iperf host as the TCP-connect (SYN -> SYN/ACK) time.
+
+    Returns the best (minimum) of PING_SAMPLES samples in milliseconds, or None if every
+    attempt failed. We use a plain TCP connect rather than ICMP so it needs no special
+    privileges and works identically in a container and an unprivileged systemd service.
+    """
+    try:
+        port = int(IPERF_PORT)
+    except ValueError:
+        return None
+    rtts = []
+    for _ in range(max(1, PING_SAMPLES)):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(PING_TIMEOUT)
+        try:
+            start = time.perf_counter()
+            s.connect((IPERF_HOST, port))
+            rtts.append((time.perf_counter() - start) * 1000)
+        except OSError:
+            pass
+        finally:
+            s.close()
+        time.sleep(0.2)
+    return round(min(rtts), 1) if rtts else None
+
+
 def write_result(result):
     """Atomically write the latest result so the HTTP server never sees a partial file."""
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -123,8 +165,28 @@ def write_result(result):
     os.replace(tmp, RESULT_PATH)
 
 
+def append_history(result):
+    """Append one completed reading to the rolling history (oldest -> newest), keeping at
+    most HISTORY_SIZE entries. Written atomically; a corrupt/missing file starts fresh."""
+    try:
+        with open(HISTORY_PATH) as f:
+            hist = json.load(f)
+        if not isinstance(hist, list):
+            hist = []
+    except (FileNotFoundError, ValueError):
+        hist = []
+    hist.append(result)
+    hist = hist[-HISTORY_SIZE:]
+    os.makedirs(DATA_DIR, exist_ok=True)
+    tmp = HISTORY_PATH + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(hist, f)
+    os.replace(tmp, HISTORY_PATH)
+
+
 def run_cycle():
     log("starting test cycle")
+    ping = run_ping()  # idle latency first, before the throughput test loads the line
     down = run_iperf(reverse=True)
     up = run_iperf(reverse=False)
     if down is None or up is None:
@@ -138,15 +200,19 @@ def run_cycle():
         # Convenience fields pre-rounded to 1 decimal in Gbps (Homepage can't cap decimals).
         "download_gbps": round(download / 1000, 1),
         "upload_gbps": round(upload / 1000, 1),
+        "ping_ms": ping,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     write_result(result)
+    append_history(result)
 
     # iperf3's host_total is summed across threads, so it can exceed 100% — divide
     # by 100 to read it as "cores used", and compare against the CPUs we have.
     def cores(v):
         return f"{v / 100:.1f}/{NCPU} cores" if isinstance(v, (int, float)) else "cpu n/a"
-    log(f"cycle ok: down {download:.0f} Mbps ({cores(down_cpu)}), up {upload:.0f} Mbps ({cores(up_cpu)})")
+    ping_str = f"{ping} ms" if ping is not None else "n/a"
+    log(f"cycle ok: down {download:.0f} Mbps ({cores(down_cpu)}), up {upload:.0f} Mbps "
+        f"({cores(up_cpu)}), ping {ping_str}")
 
     peak = max((c for c in (down_cpu, up_cpu) if isinstance(c, (int, float))), default=0)
     if peak >= 85 * NCPU:
@@ -194,6 +260,8 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.rstrip("/")
         if path == "/api/speedtest/latest":
             self._serve_latest()
+        elif path == "/api/speedtest/history":
+            self._serve_history()
         elif path in ("", "/index.html"):
             self._serve_dashboard()
         else:
@@ -208,6 +276,14 @@ class Handler(BaseHTTPRequestHandler):
             body = b"{}"
             status = 503  # no result yet
         self._respond(status, "application/json", body)
+
+    def _serve_history(self):
+        try:
+            with open(HISTORY_PATH) as f:
+                body = f.read().encode()
+        except FileNotFoundError:
+            body = b"[]"  # no readings yet — an empty timeline, not an error
+        self._respond(200, "application/json", body)
 
     def _serve_dashboard(self):
         try:
@@ -238,8 +314,10 @@ def main():
     log(f"target {IPERF_HOST}:{IPERF_PORT}, -P {IPERF_PARALLEL} -t {IPERF_DURATION}s -O {IPERF_OMIT}s")
     log(f"schedule: once daily between {WINDOW_START_HOUR:02d}:00 and {WINDOW_END_HOUR:02d}:00 {TZ}"
         + ("" if TZ_OK else " (⚠ timezone unavailable — using UTC; add tzdata)")
-        + (", plus one run on startup" if RUN_ON_START else ""))
-    log(f"serving dashboard / and GET /api/speedtest/latest on :{HTTP_PORT}")
+        + (", plus one run on startup" if RUN_ON_START
+           else " (set RUN_ON_START=true to also test on startup)"))
+    log(f"keeping up to {HISTORY_SIZE} readings of history")
+    log(f"serving dashboard / and GET /api/speedtest/{{latest,history}} on :{HTTP_PORT}")
 
     threading.Thread(target=collector_loop, daemon=True).start()
     ThreadingHTTPServer(("", HTTP_PORT), Handler).serve_forever()
