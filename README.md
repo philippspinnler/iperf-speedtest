@@ -10,7 +10,7 @@ On a multi-gigabit line, the usual Ookla-based tools (like
 under-read by a lot. iperf3 with many parallel streams gets much closer to your real line
 rate — this wraps it in something you can leave running.
 
-![The dashboard: a symmetric ~9.5 Gbit/s reading, latency, and a month of history](docs/dashboard.png)
+![The dashboard: a symmetric ~9.5 Gbit/s reading, latency, and a month of history](docs/dashboard-v2.png)
 
 It's one small Python process (standard library only — no pip installs, no database). The
 last result is saved to disk, so a good reading stays on screen even if a later test fails
