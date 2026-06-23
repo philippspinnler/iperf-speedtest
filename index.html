@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark" />
+<title>Optical line — fibre throughput</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink: #0B0D17;
+    --panel: #12162680;
+    --panel-solid: #121626;
+    --hair: #232A40;
+    --hair-soft: #1b2236;
+    --text: #E9EBF5;
+    --muted: #828AA6;
+    --faint: #4d5573;
+    --down: #B7A6FF;   /* periwinkle — receiving beam */
+    --up:   #74E0C4;   /* mint-teal  — sending beam   */
+    --bad:  #FF8A8A;
+
+    --mono: "Spline Sans Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --sans: "Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+    --ease: cubic-bezier(.2, .7, 0, 1);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    font-family: var(--sans);
+    color: var(--text);
+    background:
+      radial-gradient(120% 80% at 80% -10%, #1a1f3a 0%, transparent 55%),
+      radial-gradient(90% 70% at -10% 110%, #161a30 0%, transparent 55%),
+      var(--ink);
+    min-height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(16px, 4vw, 48px);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* faint instrument grid in the backdrop */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--hair-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--hair-soft) 1px, transparent 1px);
+    background-size: 48px 48px;
+    -webkit-mask-image: radial-gradient(80% 70% at 50% 40%, #000 0%, transparent 80%);
+            mask-image: radial-gradient(80% 70% at 50% 40%, #000 0%, transparent 80%);
+    opacity: .5;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .panel {
+    position: relative;
+    z-index: 1;
+    width: min(680px, 100%);
+    min-width: 0;       /* let the flex-centred panel shrink instead of overflowing on mobile */
+    background: var(--panel);
+    border: 1px solid var(--hair);
+    border-radius: 18px;
+    padding: clamp(22px, 4.5vw, 42px);
+    backdrop-filter: blur(14px) saturate(1.1);
+    -webkit-backdrop-filter: blur(14px) saturate(1.1);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,.04) inset,
+      0 40px 80px -40px rgba(0,0,0,.8);
+    opacity: 0;
+    transform: translateY(14px);
+    animation: rise .8s var(--ease) forwards;
+  }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+
+  /* ---- header ---- */
+  .head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding-bottom: clamp(20px, 3vw, 30px);
+    border-bottom: 1px solid var(--hair);
+    margin-bottom: clamp(22px, 3.5vw, 34px);
+  }
+  .eyebrow {
+    font-size: 11px;
+    letter-spacing: .26em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .target {
+    margin-top: 8px;
+    font-family: var(--mono);
+    font-size: clamp(15px, 2.4vw, 18px);
+    color: var(--text);
+    letter-spacing: -.01em;
+  }
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--faint);
+    box-shadow: 0 0 0 0 transparent;
+  }
+  .status[data-state="live"] .dot {
+    background: var(--up);
+    animation: pulse 2.4s var(--ease) infinite;
+  }
+  .status[data-state="error"] .dot { background: var(--bad); }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(116,224,196,.5); }
+    70%  { box-shadow: 0 0 0 7px rgba(116,224,196,0); }
+    100% { box-shadow: 0 0 0 0 rgba(116,224,196,0); }
+  }
+
+  /* ---- readouts ---- */
+  .readout { padding: clamp(14px, 2.4vw, 20px) 0; }
+  .readout + .readout { border-top: 1px solid var(--hair-soft); }
+
+  .rhead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .label .tick {
+    width: 14px; height: 2px; border-radius: 2px;
+    background: var(--accent);
+  }
+  .value {
+    line-height: 1;
+    white-space: nowrap;
+    margin-top: clamp(8px, 1.4vw, 12px);
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .num {
+    font-family: var(--mono);
+    font-weight: 500;
+    font-size: clamp(52px, 13vw, 100px);
+    letter-spacing: -.045em;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 38px var(--accent-glow);
+  }
+  .unit {
+    font-family: var(--sans);
+    font-size: clamp(13px, 2vw, 16px);
+    color: var(--muted);
+    letter-spacing: .02em;
+  }
+  .sub {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--faint);
+  }
+
+  /* ---- the signature: shared-scale capacity meter ---- */
+  .meter {
+    margin-top: clamp(14px, 2vw, 18px);
+    position: relative;
+    height: 10px;
+    border-radius: 6px;
+    background: #0a0c16;
+    border: 1px solid var(--hair-soft);
+    overflow: hidden;
+  }
+  .fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 0;
+    border-radius: 6px;
+    background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 55%, transparent), var(--accent));
+    box-shadow: 0 0 20px -2px var(--accent-glow);
+    transition: width 1.1s var(--ease);
+  }
+  .ticks {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .ticks i {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 1px;
+    background: var(--hair);
+  }
+  .scale {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 9px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    color: var(--faint);
+  }
+  .scale .cap { color: var(--muted); }
+
+  /* ---- footer ledger ---- */
+  .ledger {
+    margin-top: clamp(24px, 3.6vw, 36px);
+    padding-top: clamp(16px, 2.4vw, 22px);
+    border-top: 1px solid var(--hair);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 26px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .ledger span { color: var(--text); }
+
+  /* ---- empty / error states ---- */
+  .note {
+    text-align: center;
+    padding: clamp(36px, 8vw, 72px) 12px;
+    color: var(--muted);
+  }
+  .note h2 {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: clamp(17px, 3vw, 21px);
+    color: var(--text);
+    margin: 0 0 10px;
+    letter-spacing: -.01em;
+  }
+  .note p { margin: 0; font-size: 14px; line-height: 1.5; max-width: 36ch; margin-inline: auto; }
+
+  [hidden] { display: none !important; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .panel { animation: none; opacity: 1; transform: none; }
+    .fill { transition: none; }
+    .status .dot { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <main class="panel" role="main">
+    <header class="head">
+      <div>
+        <div class="eyebrow">Fibre throughput · latest reading</div>
+        <div class="target" id="target">—</div>
+      </div>
+      <div class="status" id="status" data-state="idle">
+        <span class="dot"></span><span id="statusText">Establishing link…</span>
+      </div>
+    </header>
+
+    <!-- live readouts -->
+    <section id="readouts" hidden>
+      <div class="readout" style="--accent: var(--down); --accent-glow: #b7a6ff55;">
+        <div class="rhead">
+          <div class="label"><span class="tick"></span>Download</div>
+          <div class="sub" id="downSub">— Mbps</div>
+        </div>
+        <div class="value"><span class="num" id="downNum">0.0</span><span class="unit">Gbit/s</span></div>
+        <div class="meter"><div class="ticks" id="downTicks"></div><div class="fill" id="downFill"></div></div>
+        <div class="scale"><span>0</span><span class="cap" id="downCap">/ — line</span></div>
+      </div>
+
+      <div class="readout" style="--accent: var(--up); --accent-glow: #74e0c455;">
+        <div class="rhead">
+          <div class="label"><span class="tick"></span>Upload</div>
+          <div class="sub" id="upSub">— Mbps</div>
+        </div>
+        <div class="value"><span class="num" id="upNum">0.0</span><span class="unit">Gbit/s</span></div>
+        <div class="meter"><div class="ticks" id="upTicks"></div><div class="fill" id="upFill"></div></div>
+        <div class="scale"><span>0</span><span class="cap" id="upCap">/ — line</span></div>
+      </div>
+
+      <footer class="ledger" id="ledger"></footer>
+    </section>
+
+    <!-- empty / error -->
+    <section class="note" id="note" hidden>
+      <h2 id="noteTitle"></h2>
+      <p id="noteBody"></p>
+    </section>
+  </main>
+
+<script>
+  const API = "/api/speedtest/latest";
+  const POLL_MS = 30000;
+  // Nice ceilings (Gbit/s) the meter snaps up to. 25 = Init7's symmetric max.
+  const STEPS = [0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100];
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const $ = (id) => document.getElementById(id);
+  const els = {
+    status: $("status"), statusText: $("statusText"), target: $("target"),
+    readouts: $("readouts"), note: $("note"), noteTitle: $("noteTitle"), noteBody: $("noteBody"),
+    ledger: $("ledger"),
+    down: { num: $("downNum"), sub: $("downSub"), fill: $("downFill"), ticks: $("downTicks"), cap: $("downCap") },
+    up:   { num: $("upNum"),   sub: $("upSub"),   fill: $("upFill"),   ticks: $("upTicks"),   cap: $("upCap") },
+  };
+
+  let lastTs = null;          // timestamp of the reading currently shown
+  let ledgerTimer = null;     // keeps the "measured … ago" line current
+
+  function ceilingFor(maxGbps) {
+    for (const s of STEPS) if (maxGbps <= s * 0.985) return s;
+    return Math.ceil(maxGbps / 10) * 10;
+  }
+
+  function fmtGbps(g) {
+    // 0.0–9.9 → one decimal; 10+ → whole numbers (no false precision at high rates)
+    return g >= 10 ? Math.round(g).toString() : g.toFixed(1);
+  }
+
+  function relTime(iso) {
+    const d = new Date(iso);
+    const s = Math.max(0, (Date.now() - d.getTime()) / 1000);
+    if (s < 90) return "just now";
+    if (s < 5400) return Math.round(s / 60) + " min ago";
+    if (s < 172800) return Math.round(s / 3600) + " h ago";
+    return Math.round(s / 86400) + " d ago";
+  }
+
+  function renderTicks(host, ceil) {
+    // a tick per nice division so you can read the scale at a glance
+    const divs = ceil <= 1 ? 10 : (ceil === 2.5 ? 5 : (ceil <= 10 ? ceil : (ceil <= 25 ? 5 : 10)));
+    host.innerHTML = "";
+    for (let i = 1; i < divs; i++) {
+      const t = document.createElement("i");
+      t.style.left = (i / divs * 100) + "%";
+      host.appendChild(t);
+    }
+  }
+
+  function countUp(el, to) {
+    if (reduceMotion) { el.textContent = fmtGbps(to); return; }
+    const start = performance.now(), dur = 1100, from = 0;
+    function step(now) {
+      const p = Math.min(1, (now - start) / dur);
+      const e = 1 - Math.pow(1 - p, 3);          // ease-out cubic
+      el.textContent = fmtGbps(from + (to - from) * e);
+      if (p < 1) requestAnimationFrame(step);
+      else el.textContent = fmtGbps(to);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function show(view) {
+    els.readouts.hidden = view !== "data";
+    els.note.hidden = view !== "note";
+  }
+
+  function setStatus(state, text) {
+    els.status.dataset.state = state;
+    els.statusText.textContent = text;
+  }
+
+  function paintLedger(d) {
+    const parts = [
+      ["streams", "16"],         // -P default; collector doesn't expose it, so this mirrors the default
+      ["sample", "10 s"],
+      ["measured", relTime(d.timestamp)],
+    ];
+    els.ledger.innerHTML = parts
+      .map(([k, v]) => `${k} <span>${v}</span>`)
+      .join('<span style="color:var(--faint)">·</span> ');
+  }
+
+  function render(d) {
+    const dG = (d.download ?? 0) / 1000;
+    const uG = (d.upload ?? 0) / 1000;
+    const ceil = ceilingFor(Math.max(dG, uG, 0.1));
+    const capLabel = `/ ${ceil} Gbit/s line`;
+
+    setStatus("live", "Live");
+    els.down.sub.textContent = `${Math.round(d.download ?? 0)} Mbps`;
+    els.up.sub.textContent = `${Math.round(d.upload ?? 0)} Mbps`;
+    els.down.cap.textContent = capLabel;
+    els.up.cap.textContent = capLabel;
+    renderTicks(els.down.ticks, ceil);
+    renderTicks(els.up.ticks, ceil);
+
+    const fresh = d.timestamp !== lastTs;
+    lastTs = d.timestamp;
+
+    show("data");
+    requestAnimationFrame(() => {
+      els.down.fill.style.width = Math.min(100, dG / ceil * 100) + "%";
+      els.up.fill.style.width = Math.min(100, uG / ceil * 100) + "%";
+    });
+    if (fresh) { countUp(els.down.num, dG); countUp(els.up.num, uG); }
+    else { els.down.num.textContent = fmtGbps(dG); els.up.num.textContent = fmtGbps(uG); }
+
+    paintLedger(d);
+    clearInterval(ledgerTimer);
+    ledgerTimer = setInterval(() => paintLedger(d), 60000);
+  }
+
+  function noteView(state, title, body) {
+    setStatus(state, state === "error" ? "Offline" : "Waiting");
+    els.noteTitle.textContent = title;
+    els.noteBody.textContent = body;
+    show("note");
+  }
+
+  async function poll() {
+    try {
+      const r = await fetch(API, { cache: "no-store" });
+      if (r.status === 503) {
+        noteView("idle", "No reading yet",
+          "The first test runs on startup — this usually fills in within a minute.");
+        return;
+      }
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const d = await r.json();
+      if (d && (d.download != null || d.upload != null)) render(d);
+      else noteView("idle", "No reading yet", "Waiting for the first measurement to complete.");
+    } catch (e) {
+      // keep the last good reading on screen if we have one; only blank out on first failure
+      if (lastTs) setStatus("error", "Reconnecting…");
+      else noteView("error", "Can't reach the collector",
+        "The dashboard is up but the speedtest service isn't answering. Retrying…");
+    }
+  }
+
+  els.target.textContent = location.hostname || "speedtest.init7.net";
+  poll();
+  setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>

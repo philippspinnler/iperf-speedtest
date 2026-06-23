@@ -7,6 +7,7 @@ FROM alpine:3.20
 RUN apk add --no-cache iperf3 python3 tzdata
 
 COPY collector.py /collector.py
+COPY index.html /index.html
 
 VOLUME ["/data"]
 EXPOSE 8080

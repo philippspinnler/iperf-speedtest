@@ -47,6 +47,10 @@ RUN_ON_START = os.environ.get("RUN_ON_START", "true").lower() not in ("0", "fals
 HTTP_PORT = int(os.environ.get("HTTP_PORT", "8080"))
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 RESULT_PATH = os.path.join(DATA_DIR, "latest.json")
+# The dashboard (index.html) ships alongside this script, so it works the same
+# whether run from a repo checkout or copied into the Docker image.
+STATIC_DIR = os.path.dirname(os.path.abspath(__file__))
+INDEX_PATH = os.path.join(STATIC_DIR, "index.html")
 NCPU = os.cpu_count() or 1
 
 if ZoneInfo is not None:
@@ -187,9 +191,15 @@ def collector_loop():
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path.rstrip("/") != "/api/speedtest/latest":
+        path = self.path.rstrip("/")
+        if path == "/api/speedtest/latest":
+            self._serve_latest()
+        elif path in ("", "/index.html"):
+            self._serve_dashboard()
+        else:
             self.send_error(404)
-            return
+
+    def _serve_latest(self):
         try:
             with open(RESULT_PATH) as f:
                 body = f.read().encode()
@@ -197,8 +207,19 @@ class Handler(BaseHTTPRequestHandler):
         except FileNotFoundError:
             body = b"{}"
             status = 503  # no result yet
+        self._respond(status, "application/json", body)
+
+    def _serve_dashboard(self):
+        try:
+            with open(INDEX_PATH, "rb") as f:
+                body = f.read()
+            self._respond(200, "text/html; charset=utf-8", body)
+        except FileNotFoundError:
+            self.send_error(404)
+
+    def _respond(self, status, content_type, body):
         self.send_response(status)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -218,7 +239,7 @@ def main():
     log(f"schedule: once daily between {WINDOW_START_HOUR:02d}:00 and {WINDOW_END_HOUR:02d}:00 {TZ}"
         + ("" if TZ_OK else " (⚠ timezone unavailable — using UTC; add tzdata)")
         + (", plus one run on startup" if RUN_ON_START else ""))
-    log(f"serving GET /api/speedtest/latest on :{HTTP_PORT}")
+    log(f"serving dashboard / and GET /api/speedtest/latest on :{HTTP_PORT}")
 
     threading.Thread(target=collector_loop, daemon=True).start()
     ThreadingHTTPServer(("", HTTP_PORT), Handler).serve_forever()
