@@ -112,7 +112,14 @@ def run_iperf(reverse):
         return None
 
     if proc.returncode != 0:
-        log(f"iperf3 {'download' if reverse else 'upload'} failed (rc={proc.returncode}): {proc.stderr.strip()[:300]}")
+        # With --json, iperf3 reports errors (e.g. "the server is busy running a test")
+        # in the JSON on stdout, not on stderr.
+        try:
+            err = json.loads(proc.stdout).get("error")
+        except ValueError:
+            err = None
+        err = err or proc.stderr.strip() or proc.stdout.strip()
+        log(f"iperf3 {'download' if reverse else 'upload'} failed (rc={proc.returncode}): {err[:300]}")
         return None
 
     try:
@@ -184,11 +191,22 @@ def append_history(result):
     os.replace(tmp, HISTORY_PATH)
 
 
+def run_iperf_retry(reverse, attempts=5, pause=60):
+    """Public servers serve one test at a time and refuse others with "busy", so retry."""
+    for attempt in range(attempts):
+        if attempt:
+            time.sleep(pause)
+        result = run_iperf(reverse)
+        if result is not None:
+            return result
+    return None
+
+
 def run_cycle():
     log("starting test cycle")
     ping = run_ping()  # idle latency first, before the throughput test loads the line
-    down = run_iperf(reverse=True)
-    up = run_iperf(reverse=False)
+    down = run_iperf_retry(reverse=True)
+    up = run_iperf_retry(reverse=False)
     if down is None or up is None:
         log("cycle incomplete — keeping previous result")
         return
@@ -233,7 +251,9 @@ def next_run():
     offset = random.randint(0, window_seconds - 1)
     target = now.replace(hour=WINDOW_START_HOUR, minute=0, second=0, microsecond=0) \
         + timedelta(seconds=offset)
-    if target <= now:
+    # Once today's window has opened, always go to tomorrow — otherwise a run at 03:09
+    # could pick 04:02 today and test several times a night.
+    if now.hour >= WINDOW_START_HOUR:
         target += timedelta(days=1)
     return (target - now).total_seconds(), target
 
