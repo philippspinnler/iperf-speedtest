@@ -338,8 +338,9 @@ def main():
     log(f"iperf3: {version}")
     log(f"detected {os.cpu_count()} CPUs")
     log(f"target {IPERF_HOST}:{IPERF_PORT}, -P {IPERF_PARALLEL} -t {IPERF_DURATION}s -O {IPERF_OMIT}s")
-    log(f"schedule: once daily between {WINDOW_START_HOUR:02d}:00 and {WINDOW_END_HOUR:02d}:00 {TZ}"
-        + ("" if TZ_OK else " (⚠ timezone unavailable — using UTC; add tzdata)")
+    log((f"schedule: every {INTERVAL_HOURS:g}h" if INTERVAL_HOURS > 0 else
+         f"schedule: once daily between {WINDOW_START_HOUR:02d}:00 and {WINDOW_END_HOUR:02d}:00 {TZ}"
+         + ("" if TZ_OK else " (⚠ timezone unavailable — using UTC; add tzdata)"))
         + (", plus one run on startup" if RUN_ON_START
            else " (set RUN_ON_START=true to also test on startup)"))
     log(f"keeping up to {HISTORY_SIZE} readings of history")
