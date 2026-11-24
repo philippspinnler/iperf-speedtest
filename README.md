@@ -118,6 +118,7 @@ the defaults target Init7.
 | `TZ` | `Europe/Zurich` | Timezone for the schedule window (needs OS tzdata) |
 | `DAILY_WINDOW_START_HOUR` | `2` | Earliest local hour for the daily test |
 | `DAILY_WINDOW_END_HOUR` | `5` | Latest local hour (exclusive) for the daily test |
+| `INTERVAL_HOURS` | _(unset)_ | Run every N hours instead of once per day (the daily window is then ignored). Handy for keeping an eye on a backup line; mind the data volume on metered connections. |
 | `RUN_ON_START` | `false` | Set to `true` to also run one test immediately on startup (handy for a first reading right after deploy) |
 | `HISTORY_SIZE` | `400` | How many past readings to keep for the history graph (~400 ≈ 13 months of daily tests) |
 | `PING_SAMPLES` | `5` | Latency samples per test; the best (lowest) one is kept |

@@ -47,6 +47,9 @@ IPERF_OMIT = int(os.environ.get("IPERF_OMIT", "2"))
 TZ = os.environ.get("TZ", "Europe/Zurich")
 WINDOW_START_HOUR = int(os.environ.get("DAILY_WINDOW_START_HOUR", "2"))
 WINDOW_END_HOUR = int(os.environ.get("DAILY_WINDOW_END_HOUR", "5"))
+# Optional: run every N hours instead of once per day in the window above (e.g. to
+# watch a backup line more closely). Unset or 0 keeps the daily window.
+INTERVAL_HOURS = float(os.environ.get("INTERVAL_HOURS") or 0)
 # Off by default: a fresh deploy waits for the next daily window. Set RUN_ON_START=true
 # to also run one test immediately on startup (handy for a first reading / testing).
 RUN_ON_START = os.environ.get("RUN_ON_START", "false").lower() in ("1", "true", "yes")
@@ -247,6 +250,9 @@ def next_run():
     a random time within [WINDOW_START_HOUR, WINDOW_END_HOUR) local time, on the
     next calendar occurrence of that window."""
     now = datetime.now(LOCAL_TZ)
+    if INTERVAL_HOURS > 0:
+        delta = timedelta(hours=INTERVAL_HOURS)
+        return delta.total_seconds(), now + delta
     window_seconds = max(1, (WINDOW_END_HOUR - WINDOW_START_HOUR) * 3600)
     offset = random.randint(0, window_seconds - 1)
     target = now.replace(hour=WINDOW_START_HOUR, minute=0, second=0, microsecond=0) \
